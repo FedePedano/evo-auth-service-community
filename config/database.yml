@@ -3,6 +3,11 @@ default: &default
   encoding: unicode
   host: <%= ENV.fetch('POSTGRES_HOST', 'localhost') %>
   port: <%= ENV.fetch('POSTGRES_PORT', '5432') %>
+  # PgBouncer en TRANSACTION mode (Supabase 6543): prepared statements y advisory
+  # locks no funcionan porque la conexión de backend rota entre statements.
+  # DB_PGBOUNCER=true los desactiva; en conexión directa queda false (default).
+  prepared_statements: <%= ENV.fetch('DB_PGBOUNCER', 'false') == 'true' ? 'false' : 'true' %>
+  advisory_locks: <%= ENV.fetch('DB_PGBOUNCER', 'false') == 'true' ? 'false' : 'true' %>
   # Supabase exige SSL; 'prefer' mantiene compatibilidad con el postgres local
   # (prueba SSL y cae a plano), 'require' para Supabase directo.
   sslmode: <%= ENV.fetch('POSTGRES_SSLMODE', 'prefer') %>
