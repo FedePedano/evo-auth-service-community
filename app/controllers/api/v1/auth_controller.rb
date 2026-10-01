@@ -151,7 +151,7 @@ class Api::V1::AuthController < Api::BaseController
     accounts = account ? [account.merge('role' => result[:user][:role])] : []
 
     success_response(
-      data: result.merge(accounts: accounts),
+      data: result.merge(accounts: accounts, tenants: tenants_for_user(result[:user])),
       message: 'Token validated successfully'
     )
   rescue TokenValidationService::InvalidToken => e
@@ -161,6 +161,36 @@ class Api::V1::AuthController < Api::BaseController
   rescue TokenValidationService::TokenNotFound => e
     error_response('TOKEN_NOT_FOUND', e.message, status: :unauthorized)
   end
+
+  private
+
+  # Multitenant A2 (exp/multitenant-a2): membresías del usuario por email
+  # contra el registro `public.tenants` (misma base `evo_community`, tabla
+  # calificada: no depende del search_path). Sin tabla => [] (legacy intacto).
+  # La membresía se matchea por email (no por user_id: los users del CRM
+  # viven en el schema del tenant, inaccesibles por FK desde acá).
+  # Solo informativo para el switcher de orgs en el frontend; el enforcement
+  # real vive en el CRM (evo_auth_concern verifica la membresía del tenant
+  # del request y falla cerrado con 403).
+  def tenants_for_user(user_data)
+    email = user_data[:email] || user_data['email']
+    return [] if email.blank?
+
+    rows = ActiveRecord::Base.connection.exec_query(
+      <<~SQL, 'tenants_for_user', [[nil, email.to_s.downcase]]
+        SELECT t.slug, t.schema_name, t.plan, m.role
+        FROM public.tenants t
+        JOIN public.tenant_memberships m
+          ON m.tenant_id = t.id AND lower(m.email) = $1
+        WHERE t.status = 'active'
+      SQL
+    )
+    rows.to_a
+  rescue StandardError
+    []
+  end
+
+  public
 
   def forgot_password
     email = params[:email]&.strip&.downcase
