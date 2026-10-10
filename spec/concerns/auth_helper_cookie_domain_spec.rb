@@ -27,8 +27,32 @@ RSpec.describe AuthHelper do
   end
 
   describe '#cookie_domain' do
-    context 'when host resolution applies (production-like env)' do
+    context 'in production without explicit override (host-only, no shared domain)' do
       before { allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('production')) }
+
+      it 'returns nil for a .com.br ccTLD host' do
+        expect(cookie_domain_for('evocrm-evo-auth.cap.refletia.com.br')).to be_nil
+      end
+
+      it 'returns nil for a plain .com host' do
+        expect(cookie_domain_for('app.exemplo.com')).to be_nil
+      end
+
+      it 'returns nil for a .co.uk host' do
+        expect(cookie_domain_for('auth.acme.co.uk')).to be_nil
+      end
+
+      it 'returns nil (host-only) for localhost' do
+        expect(cookie_domain_for('localhost')).to be_nil
+      end
+
+      it 'returns nil (host-only) for an IP address' do
+        expect(cookie_domain_for('192.168.0.10')).to be_nil
+      end
+    end
+
+    context 'in non-production (legacy behavior preserved, e.g. staging)' do
+      before { allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('staging')) }
 
       it 'returns the registrable domain for a .com.br ccTLD (not .com.br)' do
         expect(cookie_domain_for('evocrm-evo-auth.cap.refletia.com.br')).to eq('.refletia.com.br')
@@ -48,6 +72,22 @@ RSpec.describe AuthHelper do
 
       it 'returns nil (host-only) for an IP address' do
         expect(cookie_domain_for('192.168.0.10')).to be_nil
+      end
+    end
+
+    context 'in development' do
+      before { allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new('development')) }
+
+      it 'returns nil for a ngrok host (host-only)' do
+        expect(cookie_domain_for('evo-auth-davidson.ngrok.app')).to be_nil
+      end
+
+      it 'returns nil for localhost' do
+        expect(cookie_domain_for('localhost')).to be_nil
+      end
+
+      it 'returns nil for an IP address' do
+        expect(cookie_domain_for('127.0.0.1')).to be_nil
       end
     end
 

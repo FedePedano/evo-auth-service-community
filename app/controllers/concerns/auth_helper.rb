@@ -124,7 +124,7 @@ module AuthHelper
     return ENV['COOKIE_DOMAIN'].presence if ENV['COOKIE_DOMAIN'].present?
 
     request_host = request.host
-    
+
     # Em desenvolvimento com ngrok, NÃO definir domain para permitir cookies funcionarem
     # quando frontend e auth service usam o mesmo domínio ngrok
     # Cookies não podem ser compartilhados entre domínios diferentes do ngrok
@@ -138,13 +138,17 @@ module AuthHelper
       # Para localhost, não definir domain
       return nil if request_host == 'localhost' || request_host =~ /\A\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\z/
     end
-    
-    # Em produção, usar lógica normal de domínio
+
+    # Em produção, NÃO usar domínio compartilhado entre subdomínios quando não houver
+    # override explícito (COOKIE_DOMAIN). Mantém a cookie host-only (host-scoped).
+    return nil if Rails.env.production?
+
+    # Em testes, sempre host-only
     return nil if Rails.env.test?
-    
+
     # Verifica se o host é um IP ou localhost
     return nil if request_host =~ /\A\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\z/ || request_host == 'localhost'
-    
+
     # Extrai o dominio REGISTRAVEL para compartilhar o cookie entre subdominios.
     # public_suffix cobre ccTLDs de 2o nivel (.com.br, .co.uk, .com.au...) e evita
     # gerar Domain=.com.br (public suffix, rejeitado pelos navegadores). Retorna nil
