@@ -113,13 +113,30 @@ class TokenValidationService
     end
   end
 
+  # Loads and verifies a Doorkeeper access token by its plaintext value.
+  #
+  # Tokens issued by this service are stored as JWTs (doorkeeper-jwt), but the
+  # JWT is only the STORAGE FORMAT of the token string: Doorkeeper resolves it
+  # by primary-key lookup in `oauth_access_tokens`, exactly like an opaque
+  # token. We mirror that flow here and deliberately do NOT decode/verify the
+  # JWT (no signature/iss/aud check), because doing so would be a parallel
+  # validation that can diverge from revocation and is incompatible with the
+  # current flow. The authoritative checks are existence, expiration and
+  # revocation — i.e. `Doorkeeper::AccessToken#accessible?` plus distinct
+  # errors for the API response.
+  def load_bearer_token!
+    token = Doorkeeper::AccessToken.by_token(@used_token)
+    raise InvalidToken, "Invalid bearer token" unless token
+    raise ExpiredToken, "Token has expired" if token.expired?
+    raise InvalidToken, "Token has been revoked" if token.revoked?
+
+    token
+  end
+
   def verify_token_not_revoked!
     case @token_type
     when :bearer
-      @token = Doorkeeper::AccessToken.by_token(@used_token)
-      raise InvalidToken, "Invalid bearer token" unless @token
-      raise ExpiredToken, "Token has expired" if @token.expired?
-      raise InvalidToken, "Token has been revoked" if @token.revoked?
+      @token = load_bearer_token!
     when :api_access_token
       @token = AccessToken.find_by(token: @used_token)
       raise InvalidToken, "Invalid access token" unless @token
@@ -153,9 +170,7 @@ class TokenValidationService
   end
 
   def validate_bearer_token
-    @token = Doorkeeper::AccessToken.by_token(@used_token)
-    raise InvalidToken, "Invalid bearer token" unless @token
-    raise ExpiredToken, "Token has expired" if @token.expired?
+    @token = load_bearer_token!
 
     user = User.find(@token.resource_owner_id)
 
