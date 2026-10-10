@@ -170,30 +170,17 @@ class Api::V1::AuthController < Api::BaseController
 
   private
 
-  # Multitenant A2 (exp/multitenant-a2): membresías del usuario por email
-  # contra el registro `public.tenants` (misma base `evo_community`, tabla
-  # calificada: no depende del search_path). Sin tabla => [] (legacy intacto).
-  # La membresía se matchea por email (no por user_id: los users del CRM
-  # viven en el schema del tenant, inaccesibles por FK desde acá).
-  # Solo informativo para el switcher de orgs en el frontend; el enforcement
-  # real vive en el CRM (evo_auth_concern verifica la membresía del tenant
-  # del request y falla cerrado con 403).
+  # Multitenant A2 (exp/multitenant-a2): slugs de los tenants ACTIVOS del
+  # usuario, para la respuesta contractual de /validate (`data.tenants` es
+  # exactamente `string[]`). Delegado en UserTenants para no duplicar la
+  # consulta al registro `public.tenants`/`public.tenant_memberships` que ya
+  # usa el claim JWT (Fase 0.3). No expone schema_name/plan/role: solo slugs.
+  # Sin tabla o sin membresía => [] (legacy intacto). Solo informativo para el
+  # switcher de orgs; el enforcement real vive en el CRM (evo_auth_concern
+  # verifica la membresía del tenant del request y falla cerrado con 403).
   def tenants_for_user(user_data)
     email = user_data[:email] || user_data['email']
-    return [] if email.blank?
-
-    rows = ActiveRecord::Base.connection.exec_query(
-      <<~SQL, 'tenants_for_user', [[nil, email.to_s.downcase]]
-        SELECT t.slug, t.schema_name, t.plan, m.role
-        FROM public.tenants t
-        JOIN public.tenant_memberships m
-          ON m.tenant_id = t.id AND lower(m.email) = $1
-        WHERE t.status = 'active'
-      SQL
-    )
-    rows.to_a
-  rescue StandardError
-    []
+    UserTenants.active_slugs_for(email)
   end
 
   public

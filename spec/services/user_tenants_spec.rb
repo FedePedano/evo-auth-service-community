@@ -48,7 +48,7 @@ RSpec.describe UserTenants do
         expect(sql).to include('public.tenant_memberships')
         expect(sql).to include("t.status = 'active'")
         expect(sql).to match(/lower\(m\.email\)\s*=\s*\$1/)
-        expect(binds).to eq([[nil, 'owner@example.com']])
+        expect(binds.map(&:value)).to eq(['owner@example.com'])
         double('ActiveRecord::Result', to_a: [])
       end
 

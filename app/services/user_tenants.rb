@@ -27,7 +27,7 @@ class UserTenants
       return [] if email.blank?
 
       rows = ActiveRecord::Base.connection.exec_query(
-        ACTIVE_SLUGS_SQL, 'user_tenants_active_slugs', [[nil, email]]
+        ACTIVE_SLUGS_SQL, 'user_tenants_active_slugs', [email_bind(email)]
       )
       rows.to_a.map { |row| row['slug'] }.compact.uniq
     rescue StandardError => e
@@ -41,6 +41,15 @@ class UserTenants
     end
 
     private
+
+    # AR 7.1 `exec_query` rejects positional tuples (`[[nil, value]]`) with
+    # "TypeError: can't cast Array"; it needs a bind object. Without this the
+    # lookup raised and was swallowed, so the claim/response was always [].
+    def email_bind(email)
+      ActiveRecord::Relation::QueryAttribute.new(
+        'email', email, ActiveRecord::Type::String.new
+      )
+    end
 
     def log_warn(error)
       return unless defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
