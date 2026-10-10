@@ -155,33 +155,17 @@ Doorkeeper::JWT.configure do
   signing_method ENV.fetch('DOORKEEPER_JWT_ALGORITHM', 'hs256')
 
   # Payload
+  # Fase 0.3 (exp/multitenant-a2): the claim set is built by JwtClaimsBuilder
+  # so it can be unit-tested. It adds `tenants` (active tenant slugs) while
+  # preserving every existing claim and the signing configuration.
   token_payload do |opts|
     resource_owner_id = opts[:resource_owner_id]
     user = resource_owner_id ? User.find_by(id: resource_owner_id) : nil
-    
-    if user
-      {
-        iss: ENV.fetch("DOORKEEPER_JWT_ISS", "evo-auth-service"),
-        aud: ENV.fetch("DOORKEEPER_JWT_AUD", '[]'),
-        jti: SecureRandom.uuid,
-        iat: Time.current.utc.to_i,
-        exp: opts[:expires_in].seconds.from_now.to_i,
-        sub: user.id.to_s,
-        email: user.email,
-        name: user.name,
-        type: user.type,
-        role: user.role_data,
-        setup_active: Licensing::Runtime.context&.active? || false
-      }
-    else
-      {
-        iss: ENV.fetch("DOORKEEPER_JWT_ISS", "evo-auth-service"),
-        aud: ENV.fetch("DOORKEEPER_JWT_AUD", '[]'),
-        jti: SecureRandom.uuid,
-        iat: Time.current.utc.to_i,
-        exp: opts[:expires_in].seconds.from_now.to_i,
-        setup_active: Licensing::Runtime.context&.active? || false
-      }
-    end
+
+    JwtClaimsBuilder.build(
+      user: user,
+      expires_in: opts[:expires_in],
+      setup_active: Licensing::Runtime.context&.active? || false
+    )
   end
 end
