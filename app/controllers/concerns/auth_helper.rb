@@ -158,6 +158,82 @@ module AuthHelper
     registrable.present? ? ".#{registrable}" : request_host
   end
 
+  # Allowlist of hosts accepted for requests that emit/delete auth cookies
+  # (anti DNS-rebinding / confused-deputy). Comma-separated: exact hostnames
+  # or a leading "*." wildcard (matches subdomains only). "*" disables the
+  # check (development only). When the env var is blank the check is skipped
+  # so the service keeps working until the allowlist is configured.
+  def auth_allowed_hosts
+    @auth_allowed_hosts ||= ENV.fetch('AUTH_ALLOWED_HOSTS', '')
+                               .split(',')
+                               .map { |host| host.strip.downcase }
+                               .reject(&:empty?)
+  end
+
+  def allowed_host?(host)
+    allowed = auth_allowed_hosts
+    return true if allowed.empty? || allowed.include?('*')
+
+    normalized = host.to_s.downcase.split(':').first
+    allowed.any? do |entry|
+      if entry.start_with?('*.')
+        normalized.end_with?(entry[1..])
+      else
+        normalized == entry
+      end
+    end
+  end
+
+  # Allowlist of browser origins. Prefers AUTH_ALLOWED_ORIGINS, then reuses
+  # CORS_ORIGINS, then FRONTEND_URL. Empty allowlist skips the check (dev and
+  # server-to-server calls, which carry no Origin header).
+  def auth_allowed_origins
+    @auth_allowed_origins ||= begin
+      raw = [ENV['AUTH_ALLOWED_ORIGINS'], ENV['CORS_ORIGINS'], ENV['FRONTEND_URL']]
+            .map(&:presence).compact.first
+      raw.to_s.split(',').map { |origin| origin.strip.downcase.chomp('/') }.reject(&:empty?)
+    end
+  end
+
+  def allowed_origin?(origin)
+    return true if origin.blank?
+
+    allowed = auth_allowed_origins
+    return true if allowed.empty? || allowed.include?('*')
+
+    allowed.include?(origin.to_s.strip.downcase.chomp('/'))
+  end
+
+  def allowed_request?
+    allowed_host?(request.host) && allowed_origin?(request.headers['Origin'])
+  end
+
+  # before_action for cookie-emitting/deleting endpoints (login/refresh/logout).
+  # Fail-closed with 403 when the request host (or Origin, when present and an
+  # allowlist is configured) is not accepted.
+  def ensure_allowed_cookie_request!
+    return if allowed_request?
+
+    reject_disallowed_request!
+  end
+
+  # before_action for tenant-sensitive endpoints called by browsers (validate).
+  # Only the Origin is checked: server-to-server calls send no Origin and must
+  # keep working (e.g. CRM -> http://evo-auth:3001/api/v1/auth/validate).
+  def ensure_allowed_origin!
+    return if allowed_origin?(request.headers['Origin'])
+
+    reject_disallowed_request!
+  end
+
+  def reject_disallowed_request!
+    Rails.logger.warn(
+      "AuthHelper: blocked request host=#{request.host.inspect} " \
+      "origin=#{request.headers['Origin'].inspect}"
+    )
+    error_response(ApiErrorCodes::FORBIDDEN, 'Request not allowed', status: :forbidden)
+  end
+
   def render_unauthorized(message = 'Unauthorized')
     error_response('UNAUTHORIZED', message, status: :unauthorized)
   end

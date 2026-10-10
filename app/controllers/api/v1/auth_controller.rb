@@ -5,6 +5,12 @@ class Api::V1::AuthController < Api::BaseController
 
   skip_before_action :authenticate_request!, only: [:login, :refresh, :register, :forgot_password, :reset_password, :validate, :verify_mfa, :confirmation, :resend_confirmation]
 
+  # Fase 0.2 - host/origin allowlist (anti DNS-rebinding / confused-deputy).
+  # Cookie-emitting/deleting endpoints validate host + Origin; `validate` is
+  # browser-facing and only checks Origin (internal callers send no Origin).
+  before_action :ensure_allowed_cookie_request!, only: [:login, :refresh, :logout]
+  before_action :ensure_allowed_origin!, only: [:validate]
+
   # Login
   def login
     # Tenta encontrar o usuário pelo email
